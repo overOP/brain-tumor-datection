@@ -1,0 +1,75 @@
+# Virtual environments
+env/
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.python-version.bak
+
+# Environment variables (commit .env.example only)
+.env
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# Testing, linting, type checking
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Data (large, download separately)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/
+data/samples/*
+!data/samples/.gitkeep
+
+# Models and training output
+runs/
+models/*
+!models/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.engine
+*.torchscript
+*.mlpackage
+*.mlmodel
+
+# Ultralytics
+.ultralytics/
+yolov8*.pt
+yolo11*.pt
+
+# Reports
+reports/figures/*
+reports/metrics/*
+!reports/figures/.gitkeep
+!reports/metrics/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+*.swp
+
+# Docker
+docker-compose.override.yml
