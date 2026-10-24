@@ -1,7 +1,7 @@
 [project]
 name = "brain-tumor-detection"
 version = "0.1.0"
-description = "Add your description here"
+description = "Brain tumor detection on MRI images with YOLOv8, FastAPI and Docker"
 readme = "README.md"
 authors = [
     { name = "Pradeep_Chy", email = "cgpradeepop@gmail.com" }
@@ -17,16 +17,29 @@ dependencies = [
     "python-multipart>=0.0.32",
     "pyyaml>=6.0.3",
     "seaborn>=0.13.2",
+    "torch>=2.14.1",
+    "torchvision",
     "ultralytics>=8.4.174",
     "uvicorn[standard]>=0.54.0",
 ]
 
-[project.scripts]
-brain-tumor-detection = "brain_tumor_detection:main"
-
 [build-system]
 requires = ["uv_build>=0.11.33,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "brain_tumor"
+
+# On Linux (Docker) use the small CPU-only PyTorch build.
+# macOS keeps the normal PyPI build with Apple GPU (MPS) support.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [

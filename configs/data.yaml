@@ -1,0 +1,7 @@
+path: /Users/over/Documents/Code/brain-tumor-detection/data/raw
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+names: ['glioma', 'meningioma', 'pituitary']

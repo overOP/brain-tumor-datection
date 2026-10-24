@@ -1,6 +1,6 @@
 # Brain Tumor Detection
 
-An end-to-end computer vision project that detects brain tumors in MRI images using **YOLOv8**, served through a **FastAPI** REST API and packaged with **Docker**.
+An end-to-end computer vision project that detects and classifies brain tumors in MRI images using **YOLOv8**, served through a **FastAPI** REST API and packaged with **Docker**.
 
 > **Disclaimer:** This is a learning and portfolio project. It is not a medical device and must not be used for diagnosis or any clinical decision.
 
@@ -14,10 +14,10 @@ An end-to-end computer vision project that detects brain tumors in MRI images us
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Usage](#usage)
+- [Results](#results)
 - [API Reference](#api-reference)
 - [Docker](#docker)
-- [Testing and Code Quality](#testing-and-code-quality)
-- [Results](#results)
+- [Limitations](#limitations)
 - [Roadmap](#roadmap)
 - [Author](#author)
 
@@ -29,7 +29,7 @@ The goal is to build a complete machine learning workflow, from raw data to a de
 
 1. Explore and understand the MRI image dataset.
 2. Train a YOLOv8 object detection model to locate and classify tumors.
-3. Evaluate the model with standard detection metrics.
+3. Evaluate the model on a held-out test set.
 4. Expose the trained model through a FastAPI endpoint that accepts an image and returns detections.
 5. Containerize the API with Docker so it runs the same everywhere.
 
@@ -38,9 +38,23 @@ The goal is to build a complete machine learning workflow, from raw data to a de
 **Medical Image DataSet: Brain Tumor Detection** by pkdarabi on Kaggle.
 
 - Source: <https://www.kaggle.com/datasets/pkdarabi/medical-image-dataset-brain-tumor-detection>
-- Task: object detection (bounding boxes around tumors)
-- Format: brain MRI images with YOLO-format label files, split into `train`, `valid`, and `test`
-- Classes: defined in `data.yaml` (check the file after download for the exact class names and order)
+- Task: object detection
+- Classes: `glioma`, `meningioma`, `pituitary`
+- Image size: 640 x 640 for every image
+- Labels: YOLO-format `.txt` files, one per image. The labels are **polygons** (tumor outlines), not plain boxes. Ultralytics converts them to bounding boxes automatically for detection training.
+
+| Split | Images |
+| --- | --- |
+| Train | 2143 |
+| Valid | 612 |
+| Test | 308 |
+
+Findings from the data exploration (`notebooks/01_data_exploration.ipynb`):
+
+- Every image has exactly one tumor, and there are no empty label files.
+- The class split is moderately imbalanced. In the training set glioma is about 46% of the labels, pituitary about 31%, and meningioma about 23%. Valid and test have the same proportions.
+- Pituitary tumors are the smallest (median box about 1.9% of the image), and glioma sizes vary the most (0.3% to 49.9%).
+- One meningioma label in the training set was a 2 px sliver along the image edge, a labelling error. It was moved out of the dataset into `data/excluded/`, which leaves 2143 training images.
 
 The dataset is **not stored in this repository**. See [Getting Started](#getting-started) for how to download it.
 
@@ -48,81 +62,63 @@ The dataset is **not stored in this repository**. See [Getting Started](#getting
 
 | Area | Tools |
 | --- | --- |
-| Language | Python |
+| Language | Python 3.13 |
 | Package manager | uv |
-| Model | YOLOv8 (Ultralytics), PyTorch |
+| Model | YOLOv8n (Ultralytics), PyTorch |
 | Data and plotting | NumPy, pandas, Pillow, OpenCV, Matplotlib, Seaborn |
 | API | FastAPI, Uvicorn, Pydantic |
 | Containers | Docker, Docker Compose |
-| Quality | pytest, httpx, Ruff, pre-commit |
+| Tooling | pytest, httpx, Ruff, pre-commit |
 | Editor | VS Code |
 
 ## Project Structure
 
 ```
 brain-tumor-detection/
-├── .github/workflows/ci.yml     # CI pipeline
-├── .vscode/                     # Shared editor settings
 ├── configs/
-│   ├── data.yaml                # Dataset paths and class names
-│   ├── train.yaml               # Training hyperparameters
-│   └── api.yaml                 # API settings
+│   ├── data.yaml                # Dataset paths and class names for YOLO
+│   ├── train.yaml
+│   └── api.yaml
 ├── data/
 │   ├── raw/                     # Kaggle download (not tracked by Git)
-│   │   ├── train/{images,labels}/
-│   │   ├── valid/{images,labels}/
-│   │   ├── test/{images,labels}/
-│   │   └── data.yaml
-│   └── samples/                 # A few images for testing the API
-├── docs/
-│   ├── architecture.md
-│   └── api_usage.md
-├── models/                      # Trained weights (best.pt)
+│   ├── excluded/                # Removed bad label (not tracked)
+│   └── samples/
+├── models/                      # Trained weights (best.pt, not tracked)
 ├── notebooks/
 │   ├── 01_data_exploration.ipynb
 │   └── 02_results_analysis.ipynb
 ├── reports/
-│   ├── figures/                 # Plots and sample predictions
+│   ├── figures/
 │   └── metrics/
-├── runs/                        # Ultralytics training output
+├── runs/                        # Ultralytics training output (not tracked)
 ├── scripts/
-│   ├── download_data.sh
-│   ├── train.sh
-│   └── run_api.sh
 ├── src/brain_tumor/
-│   ├── config.py                # Paths and settings in one place
-│   ├── api/                     # FastAPI app (main, routes, schemas, dependencies)
-│   ├── data/                    # Data exploration helpers
-│   ├── training/                # Training code
-│   ├── evaluation/              # Evaluation code
-│   ├── inference/               # Predictor that loads weights and runs detection
-│   └── utils/                   # Logging and image helpers
+│   ├── config.py
+│   ├── api/                     # FastAPI app: main, routes, schemas
+│   ├── data/
+│   ├── training/train.py        # Training script
+│   ├── evaluation/evaluate.py   # Test-set evaluation
+│   ├── inference/predictor.py   # Loads weights and runs detection
+│   └── utils/
 ├── tests/
-│   ├── conftest.py
-│   ├── test_predictor.py
-│   └── test_api.py
 ├── .dockerignore
-├── .env.example
 ├── .gitignore
-├── .pre-commit-config.yaml
-├── .python-version
-├── docker-compose.yml
 ├── Dockerfile
-├── Makefile
+├── docker-compose.yml
 ├── pyproject.toml
 ├── uv.lock
 └── README.md
 ```
 
-The code lives in a `src/` layout, so it is installed as a package and imports such as `from brain_tumor.inference.predictor import ...` work the same in notebooks, tests, and Docker. The detection logic sits in `inference/`, and the API only calls it, which keeps the API thin and easy to test.
+The code uses a `src/` layout, so it is installed as a package and imports such as `from brain_tumor.inference.predictor import Predictor` work the same in notebooks, scripts, and Docker. The detection logic lives in `inference/`, and the API only calls it, which keeps the API thin and easy to test.
 
 ## Getting Started
 
 ### Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) installed
-- Docker (for the container step)
-- A Kaggle account (for downloading the dataset)
+- [uv](https://docs.astral.sh/uv/)
+- Docker Desktop (only for the container step)
+- A Kaggle account (to download the dataset)
 
 ### 1. Clone the repository
 
@@ -139,64 +135,57 @@ export UV_PROJECT_ENVIRONMENT=env
 uv sync
 ```
 
-`UV_PROJECT_ENVIRONMENT=env` makes `uv` use the `env/` folder instead of the default `.venv/`. Add that line to your shell profile to make it permanent.
-
-To set the packages up from scratch instead:
-
-```bash
-uv add ultralytics fastapi "uvicorn[standard]" python-multipart pydantic-settings pyyaml pillow numpy pandas matplotlib seaborn
-uv add --dev pytest httpx ruff pre-commit ipykernel kaggle
-```
+`UV_PROJECT_ENVIRONMENT=env` makes `uv` use the `env/` folder instead of the default `.venv/`. Run the `export` line in every new terminal, or use `uv run --active` after activating `env`.
 
 ### 3. Verify the installation
 
 ```bash
-uv run python -c "
-import torch, ultralytics, fastapi, cv2, pandas
-print('torch      :', torch.__version__)
-print('MPS ready  :', torch.backends.mps.is_available())
-print('ultralytics:', ultralytics.__version__)
-print('fastapi    :', fastapi.__version__)
-"
+uv run python -c "import torch; print(torch.__version__, torch.backends.mps.is_available())"
 ```
 
-On an Apple Silicon Mac, `MPS ready` should be `True`. On a machine with an NVIDIA GPU, check `torch.cuda.is_available()` instead.
+On an Apple Silicon Mac this should print `True` for MPS. On a machine with an NVIDIA GPU, check `torch.cuda.is_available()` instead.
 
 ### 4. Download the dataset
 
 Create a Kaggle API token from your account settings and place it at `~/.kaggle/kaggle.json`, then:
 
 ```bash
-mkdir -p ~/.kaggle
-mv ~/Downloads/kaggle.json ~/.kaggle/
-chmod 600 ~/.kaggle/kaggle.json
-
 uv run kaggle datasets download \
   -d pkdarabi/medical-image-dataset-brain-tumor-detection \
   -p data/raw --unzip
 ```
 
-Or download the zip manually from the Kaggle page and unzip it into `data/raw/`. Confirm that `train/`, `valid/`, `test/`, and `data.yaml` sit directly inside `data/raw/`.
+You can also download the zip manually and unzip it into `data/raw/`. Make sure `train/`, `valid/`, `test/`, and `data.yaml` sit directly inside `data/raw/`.
 
-### 5. Configure environment variables
+### 5. Point the training config at your data
 
-```bash
-cp .env.example .env
+Edit `configs/data.yaml` so `path` is the absolute path to `data/raw` on your machine:
+
+```yaml
+path: /absolute/path/to/brain-tumor-detection/data/raw
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+names: ['glioma', 'meningioma', 'pituitary']
 ```
-
-Edit `.env` as needed (model path, device, confidence threshold, and similar settings).
 
 ## Usage
 
 ### Train the model
 
 ```bash
-uv run python -m brain_tumor.training.train
+uv run python -m brain_tumor.training.train --epochs 30 --name yolov8n_baseline
 ```
 
-Training settings (model size, epochs, image size, batch size, device) are read from `configs/train.yaml`. On an Apple Silicon Mac, use `device: mps` and start with the smallest model, `yolov8n`. Training output is saved to `runs/`, and the final weights should be copied to `models/best.pt`.
+Settings used for the baseline: `yolov8n.pt` pretrained weights, image size 640, batch size 8, device `mps`, seed 42. Output is saved to `runs/`. Copy the final weights to `models/best.pt`:
 
-### Evaluate the model
+```bash
+cp runs/<your-run-name>/weights/best.pt models/best.pt
+```
+
+### Evaluate on the test set
 
 ```bash
 uv run python -m brain_tumor.evaluation.evaluate
@@ -210,6 +199,30 @@ uv run uvicorn brain_tumor.api.main:app --reload --port 8000
 
 Interactive documentation is then available at <http://localhost:8000/docs>.
 
+## Results
+
+Model: YOLOv8n, 30 epochs (about 1.3 hours on an Apple M1), trained at 640 x 640.
+
+**Test set (308 images, not used for training or model selection):**
+
+| Class | Precision | Recall | mAP50 | mAP50-95 |
+| --- | --- | --- | --- | --- |
+| **All** | **0.903** | **0.822** | **0.907** | **0.671** |
+| glioma | 0.849 | 0.635 | 0.789 | 0.509 |
+| meningioma | 0.906 | 0.936 | 0.965 | 0.790 |
+| pituitary | 0.955 | 0.897 | 0.967 | 0.714 |
+
+For comparison, the validation set (612 images, used to pick the best epoch) gave mAP50 0.913 and mAP50-95 0.698.
+
+Takeaways:
+
+- The model generalizes well. Test scores are close to validation scores.
+- **Glioma is the weakest class**, with a recall of 0.635, so about 4 in 10 gliomas are missed. Glioma also has the most varied size and shape in the data.
+- Meningioma and pituitary both reach a recall near or above 0.9.
+- Inference takes about 3 ms per image on the M1 GPU.
+
+Training curves and the confusion matrix are saved in the `runs/` folder of each run.
+
 ## API Reference
 
 | Method | Endpoint | Description |
@@ -221,7 +234,7 @@ Interactive documentation is then available at <http://localhost:8000/docs>.
 
 ```bash
 curl -X POST "http://localhost:8000/predict" \
-  -F "file=@data/samples/example.jpg"
+  -F "file=@data/raw/test/images/<image-name>.jpg"
 ```
 
 ### Example response
@@ -231,71 +244,57 @@ curl -X POST "http://localhost:8000/predict" \
   "filename": "example.jpg",
   "detections": [
     {
-      "class_name": "example_class",
-      "confidence": 0.91,
-      "box": { "x1": 120.5, "y1": 88.0, "x2": 260.2, "y2": 210.7 }
+      "class_name": "glioma",
+      "confidence": 0.62,
+      "box": { "x1": 166.8, "y1": 336.2, "x2": 346.4, "y2": 478.1 }
     }
   ]
 }
 ```
 
-The class names and exact response fields are defined in `src/brain_tumor/api/schemas.py`.
+Boxes are in pixel coordinates of the uploaded image. A file that is not a valid image returns HTTP 400.
 
 ## Docker
 
-### Build and run with Docker
+The image packages the API, its dependencies, and the trained weights.
 
-```bash
-docker build -t brain-tumor-detection .
-docker run --rm -p 8000:8000 brain-tumor-detection
-```
-
-### Run with Docker Compose
+> **Weights are not in Git.** `*.pt` files are ignored, so after cloning the repository you must place `best.pt` in `models/` before building the image. Otherwise the build stops at the `COPY models/best.pt` step.
 
 ```bash
 docker compose up --build
 ```
 
-Notes:
-
-- The trained weights in `models/best.pt` are copied into the image, while the raw dataset and training runs are excluded through `.dockerignore`.
-- Docker containers on macOS cannot use the Apple GPU (MPS), so the container runs inference on the CPU. This is fine for a single-image API. Training is done locally.
-
-## Testing and Code Quality
+Then test it:
 
 ```bash
-uv run pytest                  # run the tests
-uv run ruff check .            # lint
-uv run ruff format .           # format
-uv run pre-commit install      # enable git hooks
+curl -s localhost:8000/health
 ```
 
-The CI workflow in `.github/workflows/ci.yml` runs linting and tests on every push.
+Notes:
 
-## Results
+- On Linux, `pyproject.toml` takes PyTorch from the CPU-only index, which keeps the image and the download small. macOS installs keep the normal build with Apple GPU support.
+- Docker containers on macOS cannot use the Apple GPU, so the container runs inference on the CPU. This is fine for single-image requests. Training is done locally.
+- The `.dockerignore` file keeps the dataset, training runs, and notebooks out of the image.
 
-Fill this section in after training and evaluation.
+## Limitations
 
-| Metric | Value |
-| --- | --- |
-| mAP@0.5 | TBD |
-| mAP@0.5:0.95 | TBD |
-| Precision | TBD |
-| Recall | TBD |
-
-Sample predictions and training curves are stored in `reports/figures/`.
+- Trained and tested on a single public dataset. It was not validated on data from other scanners or hospitals, so real-world performance is unknown.
+- Every image in the dataset contains exactly one tumor, and there is no "no tumor" class. The model has not been trained to say that an image is healthy, so it should not be used that way.
+- Glioma recall is low (0.635 on the test set).
+- Detection only. The polygon labels would also allow a segmentation model, which is not part of this project yet.
 
 ## Roadmap
 
-- [ ] Set up environment and project structure
-- [ ] Download and explore the dataset
-- [ ] Train the baseline YOLOv8 model
-- [ ] Evaluate and analyze results
-- [ ] Build the FastAPI service
-- [ ] Write tests
-- [ ] Dockerize the API
-- [ ] Set up CI
-- [ ] Write up final results
+- [x] Set up the environment and project structure
+- [x] Download and explore the dataset
+- [x] Train the baseline YOLOv8n model
+- [x] Evaluate on the test set
+- [x] Build the FastAPI service
+- [x] Dockerize the API
+- [ ] Write automated tests (`tests/`)
+- [ ] Add a Makefile and CI workflow
+- [ ] Error analysis for glioma misses (confusion matrix, failure cases)
+- [ ] Try a larger model or longer training to improve glioma recall
 
 ## Author
 
