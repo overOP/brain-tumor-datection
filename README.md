@@ -15,7 +15,9 @@ An end-to-end computer vision project that detects and classifies brain tumors i
 - [Getting Started](#getting-started)
 - [Usage](#usage)
 - [Results](#results)
+- [Error Analysis](#error-analysis)
 - [API Reference](#api-reference)
+- [Testing](#testing)
 - [Docker](#docker)
 - [Limitations](#limitations)
 - [Roadmap](#roadmap)
@@ -29,7 +31,7 @@ The goal is to build a complete machine learning workflow, from raw data to a de
 
 1. Explore and understand the MRI image dataset.
 2. Train a YOLOv8 object detection model to locate and classify tumors.
-3. Evaluate the model on a held-out test set.
+3. Evaluate the model on a held-out test set and analyze its mistakes.
 4. Expose the trained model through a FastAPI endpoint that accepts an image and returns detections.
 5. Containerize the API with Docker so it runs the same everywhere.
 
@@ -101,6 +103,9 @@ brain-tumor-detection/
 │   ├── inference/predictor.py   # Loads weights and runs detection
 │   └── utils/
 ├── tests/
+│   ├── conftest.py
+│   ├── test_predictor.py
+│   └── test_api.py
 ├── .dockerignore
 ├── .gitignore
 ├── Dockerfile
@@ -217,11 +222,29 @@ For comparison, the validation set (612 images, used to pick the best epoch) gav
 Takeaways:
 
 - The model generalizes well. Test scores are close to validation scores.
-- **Glioma is the weakest class**, with a recall of 0.635, so about 4 in 10 gliomas are missed. Glioma also has the most varied size and shape in the data.
+- **Glioma is the weakest class**, with a recall of 0.635. Glioma also has the most varied size and shape in the data.
 - Meningioma and pituitary both reach a recall near or above 0.9.
 - Inference takes about 3 ms per image on the M1 GPU.
 
 Training curves and the confusion matrix are saved in the `runs/` folder of each run.
+
+## Error Analysis
+
+The full analysis is in `notebooks/02_results_analysis.ipynb`. For each of the 308 test images, the single best detection was compared with the true tumor outline. A detection counts as correct when the class matches and the box overlaps the true box by at least 50% (IoU). This check is stricter than mAP, so its counts differ from the table above.
+
+| True class | Correct | Bad box | Missed | Wrong class |
+| --- | --- | --- | --- | --- |
+| glioma (159) | 113 | 26 | 17 | 3 |
+| meningioma (62) | 59 | 2 | 1 | 0 |
+| pituitary (87) | 80 | 1 | 3 | 3 |
+
+What it shows:
+
+- Glioma is rarely confused with the other tumor types (3 of 159). Its weakness is localization and detection, not classification.
+- Most of the 26 glioma bad boxes are large, irregular outlines where the model boxes only part of the tumor. A few are confident boxes on dark regions that are not the labelled tumor.
+- Of the 17 missed gliomas, rerunning at a confidence threshold of 0.05 recovered 6, which means the model had found them with low confidence. Another 8 had only boxes elsewhere or partly on the tumor, and 3 had no detection at all.
+- The images with no detection looked low-contrast to the eye. This is a visual impression from a small sample, not a measured result.
+- Lowering the confidence threshold could recover some misses, but its effect on false detections has not been measured.
 
 ## API Reference
 
@@ -252,7 +275,15 @@ curl -X POST "http://localhost:8000/predict" \
 }
 ```
 
-Boxes are in pixel coordinates of the uploaded image. A file that is not a valid image returns HTTP 400.
+Boxes are in pixel coordinates of the uploaded image. A file that is not a valid image returns HTTP 400. Detection uses a confidence threshold of 0.25 and a non-max suppression IoU of 0.5.
+
+## Testing
+
+```bash
+uv run pytest -v
+```
+
+Six tests cover the predictor (output format, invalid input) and the API (`/health`, a valid upload, and rejection of a non-image file). They use a generated gray image, so they check that the code runs and returns the right format, not the model's accuracy. Model accuracy is measured by the evaluation script. The tests are skipped when `models/best.pt` is not present.
 
 ## Docker
 
@@ -280,7 +311,7 @@ Notes:
 
 - Trained and tested on a single public dataset. It was not validated on data from other scanners or hospitals, so real-world performance is unknown.
 - Every image in the dataset contains exactly one tumor, and there is no "no tumor" class. The model has not been trained to say that an image is healthy, so it should not be used that way.
-- Glioma recall is low (0.635 on the test set).
+- Glioma recall is low (0.635 on the test set). The error analysis shows that glioma is rarely confused with other classes. Most failures are loosely placed boxes on irregular tumors, low-confidence detections, and a few tumors that are not detected at all.
 - Detection only. The polygon labels would also allow a segmentation model, which is not part of this project yet.
 
 ## Roadmap
@@ -291,9 +322,10 @@ Notes:
 - [x] Evaluate on the test set
 - [x] Build the FastAPI service
 - [x] Dockerize the API
-- [ ] Write automated tests (`tests/`)
+- [x] Write automated tests
+- [x] Error analysis for glioma misses
 - [ ] Add a Makefile and CI workflow
-- [ ] Error analysis for glioma misses (confusion matrix, failure cases)
+- [ ] Measure the effect of the confidence threshold on precision and recall
 - [ ] Try a larger model or longer training to improve glioma recall
 
 ## Author
