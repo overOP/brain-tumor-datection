@@ -1,5 +1,4 @@
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from PIL import UnidentifiedImageError
 
 from brain_tumor.api.schemas import PredictionResponse
 
@@ -16,6 +15,6 @@ async def predict(request: Request, file: UploadFile = File(...)):
     data = await file.read()
     try:
         detections = request.app.state.predictor.predict(data)
-    except UnidentifiedImageError:
+    except ValueError:
         raise HTTPException(status_code=400, detail="File is not a valid image")
     return {"filename": file.filename, "detections": detections}

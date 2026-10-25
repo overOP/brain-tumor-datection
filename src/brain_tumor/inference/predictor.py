@@ -15,7 +15,10 @@ class Predictor:
         self.conf = conf
 
     def predict(self, image_bytes: bytes) -> list[dict]:
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        try:
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except Exception as exc:
+            raise ValueError("File is not a valid image") from exc
         result = self.model.predict(
             image, imgsz=640, conf=self.conf, iou=0.5, device=self.device, verbose=False
         )[0]
